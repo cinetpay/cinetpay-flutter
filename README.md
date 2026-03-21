@@ -19,15 +19,46 @@ Then run:
 flutter pub get
 ```
 
-### Platform setup
+### Configuration par plateforme
 
-**Android**: Add internet permission to `android/app/src/main/AndroidManifest.xml`:
+#### Android
+
+Ajoutez la permission internet dans `android/app/src/main/AndroidManifest.xml` :
 
 ```xml
-<uses-permission android:name="android.permission.INTERNET" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ... -->
+</manifest>
 ```
 
-**iOS**: No additional setup required. WebView works out of the box.
+Vérifiez que le `minSdkVersion` est au moins **19** dans `android/app/build.gradle` :
+
+```groovy
+android {
+    defaultConfig {
+        minSdkVersion 19
+    }
+}
+```
+
+#### iOS
+
+Ajoutez les schémas d'URL dans `ios/Runner/Info.plist` pour le fallback navigateur (`url_launcher`) :
+
+```xml
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>https</string>
+    <string>http</string>
+</array>
+```
+
+Vérifiez que la version minimale est **12.0** dans `ios/Podfile` :
+
+```ruby
+platform :ios, '12.0'
+```
 
 ## Usage
 
