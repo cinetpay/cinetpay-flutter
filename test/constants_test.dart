@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cinetpay_flutter/src/constants.dart';
+import 'package:cinetpay_flutter_sdk/src/constants.dart';
 
 void main() {
   group('CinetPayConstants', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:cinetpay_flutter/cinetpay_flutter.dart';
-import 'package:cinetpay_flutter/src/models/checkout_config.dart';
+import 'package:cinetpay_flutter_sdk/cinetpay_flutter_sdk.dart';
+import 'package:cinetpay_flutter_sdk/src/models/checkout_config.dart';
 
 void main() {
   group('CheckoutConfig', () {

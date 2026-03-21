@@ -1,4 +1,4 @@
-name: cinetpay_flutter
+name: cinetpay_flutter_sdk
 description: >
   Flutter SDK for CinetPay payments. Opens the CinetPay checkout page in a
   WebView and reports the payment result back to your app. The payment must be

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cinetpay_flutter/cinetpay_flutter.dart';
+import 'package:cinetpay_flutter_sdk/cinetpay_flutter_sdk.dart';
 
 void main() {
   runApp(const MyApp());

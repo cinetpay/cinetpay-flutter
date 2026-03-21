@@ -30,7 +30,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cinetpay_flutter:
+  cinetpay_flutter_sdk:
     path: ../
 
   # The following adds the Cupertino Icons font to your application.
