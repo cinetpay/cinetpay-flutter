@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import 'constants.dart';
 import 'models/checkout_config.dart';
@@ -12,37 +9,34 @@ import 'models/payment_response.dart';
 import 'models/payment_status.dart';
 import 'utils/token_validator.dart';
 
+// Conditional import for WebView (not available on web)
+import 'checkout_webview_stub.dart'
+    if (dart.library.io) 'checkout_webview_mobile.dart' as platform;
+
 /// A full-screen checkout page that displays the CinetPay payment flow
-/// inside a WebView.
+/// in a WebView (mobile) or opens in browser (web).
 ///
-/// The [paymentToken] must be obtained from your backend by calling the
-/// CinetPay API (`POST /v1/payment`). This widget loads
-/// `https://secure.cinetpay.net/checkout/{paymentToken}` and listens for
-/// payment results via JavaScript postMessage and URL navigation interception.
+/// On **Android/iOS**: displays the checkout in an embedded WebView.
+/// On **Web**: opens the checkout in a new browser tab and shows a waiting screen.
 ///
-/// ## Usage
+/// The [paymentToken] must be obtained from your backend.
 ///
 /// ```dart
 /// Navigator.push(
 ///   context,
 ///   MaterialPageRoute(
 ///     builder: (_) => CinetPayCheckoutPage(
-///       paymentToken: 'abc123def456...',
+///       paymentToken: 'abc123...',
 ///       onPaymentSuccess: (data) {
-///         print('Payment succeeded: ${data.transactionId}');
+///         print('Paid ${data.amount} ${data.currency}');
 ///       },
-///       onPaymentFailed: (data) {
-///         print('Payment failed: ${data.status}');
-///       },
-///       onClose: () => Navigator.pop(context),
 ///     ),
 ///   ),
 /// );
 /// ```
 class CinetPayCheckoutPage extends StatefulWidget {
-  /// Creates a [CinetPayCheckoutPage].
+  /// Creates a CinetPay checkout page.
   const CinetPayCheckoutPage({
-    super.key,
     required this.paymentToken,
     this.onPaymentSuccess,
     this.onPaymentFailed,
@@ -52,18 +46,16 @@ class CinetPayCheckoutPage extends StatefulWidget {
     this.appBarTitle = 'Paiement CinetPay',
     this.showAppBar = true,
     this.backgroundColor = Colors.white,
+    super.key,
   });
 
-  /// Creates a [CinetPayCheckoutPage] from a [CheckoutConfig].
-  factory CinetPayCheckoutPage.fromConfig({
-    Key? key,
-    required CheckoutConfig config,
+  /// Creates a checkout page from a [CheckoutConfig].
+  factory CinetPayCheckoutPage.fromConfig(
+    CheckoutConfig config, {
     String appBarTitle = 'Paiement CinetPay',
     bool showAppBar = true,
-    Color backgroundColor = Colors.white,
   }) {
     return CinetPayCheckoutPage(
-      key: key,
       paymentToken: config.paymentToken,
       onPaymentSuccess: config.onPaymentSuccess,
       onPaymentFailed: config.onPaymentFailed,
@@ -72,29 +64,28 @@ class CinetPayCheckoutPage extends StatefulWidget {
       onError: config.onError,
       appBarTitle: appBarTitle,
       showAppBar: showAppBar,
-      backgroundColor: backgroundColor,
     );
   }
 
-  /// The payment token obtained from your backend.
+  /// The payment token obtained from the backend.
   final String paymentToken;
 
-  /// Called when the payment is accepted.
+  /// Called when payment is accepted.
   final PaymentCallback? onPaymentSuccess;
 
-  /// Called when the payment is refused.
+  /// Called when payment is refused.
   final PaymentCallback? onPaymentFailed;
 
-  /// Called when the payment is pending.
+  /// Called when payment is pending.
   final PaymentCallback? onPaymentPending;
 
-  /// Called when the checkout page is closed.
+  /// Called when the checkout is closed.
   final CloseCallback? onClose;
 
-  /// Called when a technical error occurs.
+  /// Called when an error occurs.
   final ErrorCallback? onError;
 
-  /// Title displayed in the app bar.
+  /// Title shown in the app bar.
   final String appBarTitle;
 
   /// Whether to show the app bar. Defaults to `true`.
@@ -108,7 +99,6 @@ class CinetPayCheckoutPage extends StatefulWidget {
 }
 
 class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
-  late final WebViewController _controller;
   bool _isLoading = true;
   bool _hasError = false;
   bool _paymentHandled = false;
@@ -116,201 +106,55 @@ class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
   @override
   void initState() {
     super.initState();
-    _initWebView();
+    _init();
   }
 
-  void _initWebView() {
-    // Validate token first
+  void _init() {
     final tokenError = TokenValidator.validate(widget.paymentToken);
     if (tokenError != null) {
-      _hasError = true;
+      setState(() => _hasError = true);
       widget.onError?.call(tokenError);
       return;
     }
 
-    final checkoutUrl =
-        CinetPayConstants.checkoutUrl(widget.paymentToken);
+    if (kIsWeb) {
+      _openInBrowser();
+    }
+  }
 
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(widget.backgroundColor)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (mounted) {
-              setState(() => _isLoading = true);
-            }
-          },
-          onPageFinished: (_) {
-            if (mounted) {
-              setState(() => _isLoading = false);
-            }
-            _injectMessageListener();
-          },
-          onNavigationRequest: (request) =>
-              _handleNavigation(request),
-          onWebResourceError: (error) {
-            if (kDebugMode) {
-              print('[CinetPay] WebView error: ${error.description}');
-            }
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _hasError = true;
-              });
-            }
-            widget.onError?.call(
-              PaymentError(
-                code: 'WEBVIEW_ERROR',
-                message: error.description,
-              ),
-            );
-          },
+  Future<void> _openInBrowser() async {
+    final url = CinetPayConstants.checkoutUrl(widget.paymentToken);
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      setState(() => _isLoading = false);
+    } else {
+      setState(() => _hasError = true);
+      widget.onError?.call(
+        const PaymentError(
+          code: 'LAUNCH_FAILED',
+          message: 'Impossible d\'ouvrir le navigateur.',
         ),
-      )
-      ..addJavaScriptChannel(
-        'CinetPayFlutter',
-        onMessageReceived: _handleJavaScriptMessage,
-      )
-      ..loadRequest(Uri.parse(checkoutUrl));
-  }
-
-  /// Injects a script that forwards postMessage events to the Flutter channel.
-  void _injectMessageListener() {
-    _controller.runJavaScript('''
-      (function() {
-        if (window._cinetPayListenerInjected) return;
-        window._cinetPayListenerInjected = true;
-        window.addEventListener('message', function(event) {
-          try {
-            var data = typeof event.data === 'string'
-              ? JSON.parse(event.data)
-              : event.data;
-            if (data && typeof data === 'object' && (data.status || data.error || data.action)) {
-              if (window.CinetPayFlutter) {
-                CinetPayFlutter.postMessage(JSON.stringify(data));
-              }
-            }
-          } catch(e) {}
-        });
-      })();
-    ''');
-  }
-
-  /// Handles JavaScript messages forwarded from the checkout page.
-  void _handleJavaScriptMessage(JavaScriptMessage message) {
-    try {
-      final data = jsonDecode(message.message);
-      if (data is! Map<String, dynamic>) return;
-
-      // Handle payment status
-      if (data.containsKey('status')) {
-        final response = PaymentResponse.fromJson(data);
-        _dispatchResponse(response);
-      }
-
-      // Handle errors
-      if (data.containsKey('error') || data['code'] == 'ERROR') {
-        final error = PaymentError.fromJson(data);
-        widget.onError?.call(error);
-      }
-
-      // Handle close action
-      if (data['action'] == 'CLOSE' || data['type'] == 'close') {
-        _handleClose();
-      }
-    } catch (_) {
-      // Ignore non-JSON messages
+      );
     }
   }
 
-  /// Intercepts navigation to detect success/failure redirects.
-  NavigationDecision _handleNavigation(NavigationRequest request) {
-    final url = request.url.toLowerCase();
-
-    // Check for success indicators
-    for (final indicator in CinetPayConstants.successIndicators) {
-      if (url.contains(indicator.toLowerCase())) {
-        _dispatchResponse(
-          PaymentResponse(
-            amount: 0,
-            currency: '',
-            status: PaymentStatus.accepted,
-            paymentMethod: '',
-            description: '',
-            transactionId: _extractParam(request.url, 'transaction_id'),
-          ),
-        );
-        return NavigationDecision.prevent;
-      }
-    }
-
-    // Check for failure indicators
-    for (final indicator in CinetPayConstants.failureIndicators) {
-      if (url.contains(indicator.toLowerCase())) {
-        _dispatchResponse(
-          PaymentResponse(
-            amount: 0,
-            currency: '',
-            status: PaymentStatus.refused,
-            paymentMethod: '',
-            description: '',
-            transactionId: _extractParam(request.url, 'transaction_id'),
-          ),
-        );
-        return NavigationDecision.prevent;
-      }
-    }
-
-    // Allow navigation within CinetPay domains
-    final uri = Uri.tryParse(request.url);
-    if (uri != null) {
-      final host = uri.host;
-      if (host.endsWith('cinetpay.net') ||
-          host.endsWith('cinetpay.com') ||
-          host.endsWith('cinetpay.co')) {
-        return NavigationDecision.navigate;
-      }
-    }
-
-    // For external URLs, open in the system browser
-    _launchExternalUrl(request.url);
-    return NavigationDecision.prevent;
-  }
-
-  /// Dispatches the payment response to the appropriate callback.
-  void _dispatchResponse(PaymentResponse response) {
+  void _handlePaymentResponse(PaymentResponse response) {
     if (_paymentHandled) return;
     _paymentHandled = true;
 
     switch (response.status) {
       case PaymentStatus.accepted:
         widget.onPaymentSuccess?.call(response);
-        break;
       case PaymentStatus.refused:
         widget.onPaymentFailed?.call(response);
-        break;
-      case PaymentStatus.pending:
-      case PaymentStatus.initiated:
-      case PaymentStatus.expired:
-      case PaymentStatus.unknown:
+      default:
         widget.onPaymentPending?.call(response);
-        break;
     }
   }
 
-  /// Extracts a query parameter from a URL string.
-  String _extractParam(String url, String param) {
-    final uri = Uri.tryParse(url);
-    return uri?.queryParameters[param] ?? '';
-  }
-
-  /// Opens an external URL in the system browser.
-  Future<void> _launchExternalUrl(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+  void _handleError(PaymentError error) {
+    widget.onError?.call(error);
   }
 
   void _handleClose() {
@@ -360,7 +204,7 @@ class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Unable to load payment page',
+                'Impossible de charger la page de paiement',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -369,7 +213,7 @@ class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Please check your internet connection and try again.',
+                'Vérifiez votre connexion internet et réessayez.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey),
               ),
@@ -380,15 +224,9 @@ class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
                     _hasError = false;
                     _isLoading = true;
                   });
-                  _controller.loadRequest(
-                    Uri.parse(
-                      CinetPayConstants.checkoutUrl(
-                        widget.paymentToken,
-                      ),
-                    ),
-                  );
+                  _init();
                 },
-                child: const Text('Retry'),
+                child: const Text('Réessayer'),
               ),
             ],
           ),
@@ -396,9 +234,70 @@ class _CinetPayCheckoutPageState extends State<CinetPayCheckoutPage> {
       );
     }
 
+    // On web: show waiting screen (checkout opened in browser)
+    if (kIsWeb) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isLoading) const CircularProgressIndicator(),
+              if (!_isLoading) ...[
+                const Icon(
+                  Icons.open_in_new,
+                  size: 64,
+                  color: Color(0xFFE8530E),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Paiement en cours...',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Finalisez votre paiement dans la fenêtre\nqui vient de s\'ouvrir.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 24),
+                OutlinedButton(
+                  onPressed: () {
+                    _handleClose();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Annuler'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // On mobile: show WebView
     return Stack(
       children: [
-        WebViewWidget(controller: _controller),
+        platform.buildWebView(
+          paymentToken: widget.paymentToken,
+          backgroundColor: widget.backgroundColor,
+          onPaymentResponse: _handlePaymentResponse,
+          onError: _handleError,
+          onPageStarted: () => setState(() => _isLoading = true),
+          onPageFinished: () => setState(() => _isLoading = false),
+          onWebResourceError: () {
+            setState(() => _hasError = true);
+            _handleError(
+              const PaymentError(
+                code: 'WEBVIEW_ERROR',
+                message: 'Failed to load the payment page.',
+              ),
+            );
+          },
+        ),
         if (_isLoading)
           const Center(
             child: CircularProgressIndicator(),
