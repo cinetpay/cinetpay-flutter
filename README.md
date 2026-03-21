@@ -265,27 +265,159 @@ if (error != null) {
 }
 ```
 
-## How It Works
+## Comment ça marche
 
-1. Your backend initializes a payment via the CinetPay API and returns a `paymentToken`.
-2. The Flutter SDK opens `https://secure.cinetpay.net/checkout/{paymentToken}` in a WebView.
-3. The user completes the payment on the CinetPay checkout page.
-4. The SDK detects the payment result via:
-   - **JavaScript postMessage**: The checkout page sends a message with the payment status.
-   - **URL interception**: The SDK intercepts navigation to success/failure URLs.
-5. The appropriate callback is invoked with a `PaymentResponse`.
+```mermaid
+sequenceDiagram
+    participant App as App Flutter
+    participant B as Votre Backend
+    participant C as CinetPay API
 
-## Supported Countries
+    App->>B: 1. Demande de paiement
+    B->>C: 2. POST /v1/payment
+    C-->>B: 3. paymentToken
+    B-->>App: 4. { paymentToken }
+    App->>App: 5. CinetPay.show(paymentToken)
+    App->>C: 6. WebView → checkout
+    Note over App,C: L'utilisateur paie
+    C-->>B: 7. Webhook (notifyUrl)
+    C-->>App: 8. Callback → onPaymentSuccess
+```
 
-Burkina Faso, Benin, DR Congo, Ivory Coast, Cameroon, Guinea, Guinea-Bissau, Mali, Niger, Senegal, Togo.
+1. Votre **backend** initialise le paiement via l'API CinetPay et obtient un `paymentToken`
+2. L'app Flutter reçoit ce token et ouvre le checkout dans une **WebView** (mobile) ou le **navigateur** (web)
+3. L'utilisateur paie — le SDK détecte le résultat via **postMessage** ou **interception d'URL**
+4. Le callback approprié est appelé avec un `PaymentResponse`
+
+## SDKs backend pour obtenir le paymentToken
+
+Le `paymentToken` est obtenu côté serveur. Utilisez le SDK de votre choix :
+
+| SDK | Langage | Installation |
+|---|---|---|
+| [`cinetpay-js`](https://github.com/cinetpay/cinetpay-js) | Node.js/TypeScript | `npm install cinetpay-js` |
+| [`cinetpay-python`](https://github.com/cinetpay/cinetpay-python) | Python | `pip install cinetpay-python` |
+| [`cinetpay-go`](https://github.com/cinetpay/cinetpay-go) | Go | `go get github.com/cinetpay/cinetpay-go` |
+| [`cinetpay-laravel-sdk`](https://github.com/cinetpay/cinetpay-laravel-sdk) | PHP/Laravel | `composer require cinetpay/laravel-sdk` |
+| API directe | Tout langage | `POST /v1/payment` |
+
+### Exemple backend (Node.js)
+
+```javascript
+const { CinetPayClient } = require('cinetpay-js')
+
+const client = new CinetPayClient({
+  credentials: {
+    CI: { apiKey: process.env.CINETPAY_API_KEY_CI, apiPassword: process.env.CINETPAY_API_PASSWORD_CI },
+  },
+})
+
+app.post('/api/pay', async (req, res) => {
+  const payment = await client.payment.initialize({
+    currency: 'XOF',
+    merchantTransactionId: `ORDER-${Date.now()}`,
+    amount: req.body.amount,
+    lang: 'fr',
+    designation: 'Achat mobile',
+    clientEmail: req.body.email,
+    clientFirstName: req.body.firstName,
+    clientLastName: req.body.lastName,
+    successUrl: 'https://monsite.com/success',
+    failedUrl: 'https://monsite.com/failed',
+    notifyUrl: 'https://monsite.com/webhook',
+    channel: 'PUSH',
+  }, 'CI')
+
+  res.json({ paymentToken: payment.paymentToken })
+})
+```
+
+### Exemple Flutter complet (avec backend)
+
+```dart
+class PaymentService {
+  static Future<String> getPaymentToken(int amount) async {
+    final response = await http.post(
+      Uri.parse('https://votre-api.com/api/pay'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'amount': amount, 'email': 'client@email.com',
+        'firstName': 'Jean', 'lastName': 'Dupont'}),
+    );
+    final data = jsonDecode(response.body);
+    return data['paymentToken'];
+  }
+}
+
+// Dans votre widget
+ElevatedButton(
+  onPressed: () async {
+    final token = await PaymentService.getPaymentToken(5000);
+    if (mounted) {
+      CinetPay.show(
+        context: context,
+        paymentToken: token,
+        onPaymentSuccess: (data) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payé ! ${data.amount} ${data.currency}')),
+          );
+        },
+      );
+    }
+  },
+  child: const Text('Payer 5000 XOF'),
+)
+```
+
+## Pays supportés
+
+| Pays | Code | Opérateurs |
+|------|------|------------|
+| Côte d'Ivoire | CI | Orange Money, Moov, MTN, Wave |
+| Sénégal | SN | Orange Money, Free, Expresso, Wave |
+| Cameroun | CM | Orange Money, MTN |
+| Burkina Faso | BF | Orange Money, Moov, Wave |
+| Mali | ML | Orange Money, Moov |
+| Togo | TG | Moov, TMoney |
+| Guinée | GN | Orange Money, MTN |
+| Bénin | BJ | Moov, MTN |
+| RD Congo | CD | Orange Money, Airtel, M-Pesa, Africell |
+| Niger | NE | Airtel, Moov, Zamani |
+
+## Sécurité
+
+- Les credentials (`apiKey` / `apiPassword`) restent **côté serveur** — l'app ne reçoit qu'un `paymentToken` opaque
+- Le `paymentToken` est validé (alphanumérique, 10-128 caractères) avant chargement
+- La WebView n'autorise que les domaines CinetPay
+- Les URLs externes sont ouvertes dans le navigateur système
+
+## Plateformes supportées
+
+| Plateforme | Comportement |
+|---|---|
+| **Android** | WebView intégrée (minSdkVersion 19) |
+| **iOS** | WebView intégrée (iOS 12+) |
+| **Web** | Ouvre le navigateur + écran d'attente |
 
 ## Requirements
 
 - Flutter 3.10+
 - Dart 3.0+
-- Android: minSdkVersion 19+
-- iOS: 12.0+
 
-## License
+## Écosystème CinetPay
 
-MIT License. See [LICENSE](LICENSE) for details.
+| Package | Cible |
+|---|---|
+| [`cinetpay-js`](https://npmjs.com/package/cinetpay-js) | Backend Node.js |
+| [`cinetpay-python`](https://pypi.org/project/cinetpay-python/) | Backend Python |
+| [`cinetpay-go`](https://github.com/cinetpay/cinetpay-go) | Backend Go |
+| [`cinetpay-seamless`](https://npmjs.com/package/cinetpay-seamless) | Frontend web |
+| **`cinetpay_flutter`** | **Mobile iOS/Android/Web** |
+| [`cinetpay-mcp`](https://npmjs.com/package/cinetpay-mcp) | AI assistants |
+
+## Support
+
+Pour toute question sur l'API CinetPay : **support@cinetpay.com**
+
+## Licence
+
+MIT
