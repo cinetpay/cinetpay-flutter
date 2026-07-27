@@ -3,7 +3,7 @@ description: >
   Flutter SDK for CinetPay payments. Opens the CinetPay checkout page in a
   WebView and reports the payment result back to your app. The payment must be
   initialized on your backend first — this SDK only handles the frontend flow.
-version: 1.0.0
+version: 1.1.0
 homepage: https://cinetpay.com
 repository: https://github.com/cinetpay/cinetpay-flutter
 issue_tracker: https://github.com/cinetpay/cinetpay-flutter/issues
@@ -23,5 +23,3 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
-
-flutter:

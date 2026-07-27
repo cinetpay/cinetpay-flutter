@@ -17,6 +17,7 @@ class PaymentResponse {
     this.metadata,
     this.operatorId,
     this.paymentDate,
+    this.dataAvailable = true,
   });
 
   /// Creates a [PaymentResponse] from a JSON map.
@@ -69,6 +70,14 @@ class PaymentResponse {
 
   /// The payment date as returned by CinetPay.
   final String? paymentDate;
+
+  /// Whether this response carries actual payment data.
+  ///
+  /// `false` when the status was inferred from the checkout URL alone — in
+  /// that case [amount], [currency] and [transactionId] are empty placeholders
+  /// and must not be trusted. Configure a [PaymentStatusChecker] to always
+  /// receive populated responses.
+  final bool dataAvailable;
 
   /// Converts this response to a JSON map.
   Map<String, dynamic> toJson() => {

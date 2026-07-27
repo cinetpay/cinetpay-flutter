@@ -2,7 +2,7 @@
 
 Flutter SDK for CinetPay payments. Opens the CinetPay checkout page in a WebView and reports the payment result back to your app.
 
-This is a **frontend-only** SDK. The payment must be initialized on your backend first (using [cinetpay-js](https://github.com/cinetpay/cinetpay-js), [cinetpay-python](https://github.com/cinetpay/cinetpay-python), [cinetpay-go](https://github.com/cinetpay/cinetpay-go), or any backend), which returns a `paymentToken`. The Flutter SDK then opens `https://secure.cinetpay.net/checkout/{paymentToken}` in a WebView.
+This is a **frontend-only** SDK. The payment must be initialized on your backend first (using [cinetpay-js](https://github.com/cinetpay/cinetpay-js), [cinetpay-python](https://github.com/cinetpay/cinetpay-python), [cinetpay-go](https://github.com/cinetpay/cinetpay-go), or any backend), which returns a `paymentToken`. The Flutter SDK then opens `{checkoutHost}/checkout/{paymentToken}` in a WebView, where the host depends on the [environment](#2-open-the-checkout-in-your-flutter-app) the token was created on.
 
 ## Installation
 
@@ -76,8 +76,19 @@ App  <--  paymentToken  <--  Your Backend
 Import the SDK:
 
 ```dart
-import 'package:cinetpay_flutter/cinetpay_flutter.dart';
+import 'package:cinetpay_flutter_sdk/cinetpay_flutter_sdk.dart';
 ```
+
+> [!IMPORTANT]
+> **Choisissez l'environnement.** Le `paymentToken` n'est valide que sur
+> l'environnement qui l'a émis. Le SDK cible **la sandbox par défaut** : un token
+> de production ouvert sans `environment: CinetPayEnvironment.production`
+> produit un **404** sur la page de checkout.
+>
+> | Environnement | API backend | Hôte checkout |
+> |---|---|---|
+> | `CinetPayEnvironment.sandbox` (défaut) | `api.cinetpay.net` | `secure.cinetpay.net` |
+> | `CinetPayEnvironment.production` | `api.cinetpay.co` | `secure.cinetpay.co` |
 
 #### Method 1: Bottom sheet (recommended)
 
@@ -85,6 +96,7 @@ import 'package:cinetpay_flutter/cinetpay_flutter.dart';
 CinetPay.show(
   context: context,
   paymentToken: 'abc123def456...',
+  environment: CinetPayEnvironment.production,
   onPaymentSuccess: (data) {
     print('Paid ${data.amount} ${data.currency}');
     print('Transaction ID: ${data.transactionId}');
@@ -195,6 +207,36 @@ CinetPayButton.fromConfig(config: config, text: 'Pay');
 // Or with the full-screen page
 CinetPayCheckoutPage.fromConfig(config: config);
 ```
+
+### Vérification du statut (fortement recommandé)
+
+La page de checkout ne renvoie pas systématiquement les détails du paiement à
+l'application. Sans `statusChecker`, le SDK ne peut déduire que le **statut**
+depuis l'URL : `amount`, `currency` et `transactionId` sont alors vides, et
+`data.dataAvailable` vaut `false`.
+
+Fournissez un `statusChecker` qui interroge **votre backend** (lequel appelle
+`POST /v1/payment/check`) pour recevoir des réponses complètes et fiables :
+
+```dart
+CinetPay.show(
+  context: context,
+  paymentToken: token,
+  environment: CinetPayEnvironment.production,
+  statusChecker: () async {
+    final res = await http.get(Uri.parse('$myBackend/payments/$token/status'));
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  },
+  statusPollInterval: const Duration(seconds: 3), // minimum 1s
+  onPaymentSuccess: (data) {
+    print('${data.amount} ${data.currency} — ${data.transactionId}');
+  },
+);
+```
+
+Le statut est interrogé tant que le checkout est ouvert, et le polling s'arrête
+dès qu'un statut final est atteint. Le webhook `notify_url` de votre backend
+reste la source de vérité pour créditer la commande.
 
 ## API Reference
 

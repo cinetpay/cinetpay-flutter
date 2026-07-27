@@ -19,6 +19,8 @@ import 'utils/token_validator.dart';
 /// CinetPay.show(
 ///   context: context,
 ///   paymentToken: 'abc123def456...',
+///   // Must match where the token was created. Defaults to sandbox.
+///   environment: CinetPayEnvironment.production,
 ///   onPaymentSuccess: (data) {
 ///     print('Paid ${data.amount} ${data.currency}');
 ///   },
@@ -34,7 +36,7 @@ class CinetPay {
   CinetPay._();
 
   /// SDK version.
-  static const String version = '1.0.0';
+  static const String version = '1.1.0';
 
   /// Shows the CinetPay checkout as a modal bottom sheet.
   ///
@@ -42,13 +44,22 @@ class CinetPay {
   /// The checkout slides up from the bottom, covering 92% of the screen.
   ///
   /// The [paymentToken] must be obtained from your backend by calling
-  /// the CinetPay API (`POST /v1/payment`).
+  /// the CinetPay API (`POST /v1/payment`), and [environment] must match the
+  /// environment that token was created on — a production token opened against
+  /// the sandbox host returns a `404`.
+  ///
+  /// Supply a [statusChecker] to receive responses containing the real amount
+  /// and transaction id; without it, only the status is reported.
   ///
   /// If the token is invalid, the [onError] callback is called immediately
   /// and the bottom sheet is not shown.
   static void show({
     required BuildContext context,
     required String paymentToken,
+    CinetPayEnvironment environment = CinetPayEnvironment.sandbox,
+    String? checkoutBaseUrl,
+    PaymentStatusChecker? statusChecker,
+    Duration statusPollInterval = const Duration(seconds: 3),
     PaymentCallback? onPaymentSuccess,
     PaymentCallback? onPaymentFailed,
     PaymentCallback? onPaymentPending,
@@ -66,6 +77,10 @@ class CinetPay {
     showCinetPayBottomSheet(
       context: context,
       paymentToken: paymentToken,
+      environment: environment,
+      checkoutBaseUrl: checkoutBaseUrl,
+      statusChecker: statusChecker,
+      statusPollInterval: statusPollInterval,
       onPaymentSuccess: onPaymentSuccess,
       onPaymentFailed: onPaymentFailed,
       onPaymentPending: onPaymentPending,
@@ -86,6 +101,10 @@ class CinetPay {
     show(
       context: context,
       paymentToken: config.paymentToken,
+      environment: config.environment,
+      checkoutBaseUrl: config.checkoutBaseUrl,
+      statusChecker: config.statusChecker,
+      statusPollInterval: config.statusPollInterval,
       onPaymentSuccess: config.onPaymentSuccess,
       onPaymentFailed: config.onPaymentFailed,
       onPaymentPending: config.onPaymentPending,
@@ -103,6 +122,8 @@ class CinetPay {
   /// backend webhook (notify_url) to confirm the payment.
   static Future<bool> openInBrowser({
     required String paymentToken,
+    CinetPayEnvironment environment = CinetPayEnvironment.sandbox,
+    String? checkoutBaseUrl,
     ErrorCallback? onError,
   }) async {
     final tokenError = TokenValidator.validate(paymentToken);
@@ -111,7 +132,13 @@ class CinetPay {
       return false;
     }
 
-    final url = Uri.parse(CinetPayConstants.checkoutUrl(paymentToken));
+    final url = Uri.parse(
+      CinetPayConstants.checkoutUrl(
+        paymentToken,
+        environment: environment,
+        baseUrl: checkoutBaseUrl,
+      ),
+    );
 
     if (await canLaunchUrl(url)) {
       return launchUrl(url, mode: LaunchMode.externalApplication);

@@ -49,4 +49,13 @@ enum PaymentStatus {
       this == PaymentStatus.pending ||
       this == PaymentStatus.initiated ||
       this == PaymentStatus.expired;
+
+  /// Whether this status is final and will not change.
+  ///
+  /// Used to stop status polling. Note that [expired] is terminal even though
+  /// [isPending] also reports `true` for it, for backwards compatibility.
+  bool get isTerminal =>
+      this == PaymentStatus.accepted ||
+      this == PaymentStatus.refused ||
+      this == PaymentStatus.expired;
 }

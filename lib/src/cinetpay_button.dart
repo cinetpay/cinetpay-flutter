@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'cinetpay.dart';
+import 'constants.dart';
 import 'models/checkout_config.dart';
 
 /// A pre-styled button that opens the CinetPay checkout when pressed.
@@ -40,6 +41,10 @@ class CinetPayButton extends StatelessWidget {
   const CinetPayButton({
     super.key,
     required this.paymentToken,
+    this.environment = CinetPayEnvironment.sandbox,
+    this.checkoutBaseUrl,
+    this.statusChecker,
+    this.statusPollInterval = const Duration(seconds: 3),
     this.text = 'Payer avec CinetPay',
     this.onPaymentSuccess,
     this.onPaymentFailed,
@@ -65,6 +70,10 @@ class CinetPayButton extends StatelessWidget {
     return CinetPayButton(
       key: key,
       paymentToken: config.paymentToken,
+      environment: config.environment,
+      checkoutBaseUrl: config.checkoutBaseUrl,
+      statusChecker: config.statusChecker,
+      statusPollInterval: config.statusPollInterval,
       text: text,
       onPaymentSuccess: config.onPaymentSuccess,
       onPaymentFailed: config.onPaymentFailed,
@@ -80,6 +89,18 @@ class CinetPayButton extends StatelessWidget {
 
   /// The payment token obtained from your backend.
   final String paymentToken;
+
+  /// The CinetPay environment the [paymentToken] was created on.
+  final CinetPayEnvironment environment;
+
+  /// Overrides the checkout host entirely, ignoring [environment].
+  final String? checkoutBaseUrl;
+
+  /// Optional authoritative payment status poller. See [PaymentStatusChecker].
+  final PaymentStatusChecker? statusChecker;
+
+  /// How often [statusChecker] is invoked.
+  final Duration statusPollInterval;
 
   /// Button label text.
   final String text;
@@ -151,6 +172,10 @@ class CinetPayButton extends StatelessWidget {
     CinetPay.show(
       context: context,
       paymentToken: paymentToken,
+      environment: environment,
+      checkoutBaseUrl: checkoutBaseUrl,
+      statusChecker: statusChecker,
+      statusPollInterval: statusPollInterval,
       onPaymentSuccess: onPaymentSuccess,
       onPaymentFailed: onPaymentFailed,
       onPaymentPending: onPaymentPending,
